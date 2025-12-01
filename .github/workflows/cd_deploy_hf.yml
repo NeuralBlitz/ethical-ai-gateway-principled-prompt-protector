@@ -1,3 +1,4 @@
+# .github/workflows/cd_deploy_hf.yml
 name: CD - Deploy to Hugging Face
 
 on:
@@ -8,17 +9,58 @@ on:
 jobs:
   deploy-model-and-space:
     runs-on: ubuntu-latest
-    environment: HuggingFace
+    environment: HuggingFace # Link to your GitHub environment for secrets management
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v3
         with:
           python-version: '3.9'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install huggingface_hub
-      # Add deployment steps here for Hugging Face, model syncing, etc.
+          pip install huggingface_hub # Ensure huggingface_hub is installed for scripts
+
+      - name: Authenticate to Hugging Face Hub
+        uses: huggingface/actions/login@v1
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }} # Use a GitHub secret for your Hugging Face API token
+
+      - name: Push trained model to Hugging Face Model Hub
+        # This script copies model files to a temporary directory and pushes
+        # Assumes the model files are saved in 'models/'
+        run: python scripts/push_to_hf_hub.py models/ ethical-ai-gateway/principled-prompt-protector-model
+
+      - name: Push Streamlit app to Hugging Face Spaces
+        uses: huggingface/actions/push-to-hub@v3
+        with:
+          filepath: app_hf_space.py
+          repository: ethical-ai-gateway/prompt-protector-demo # Your HF Space repository name
+          commit_message: "Deploy Streamlit app from GitHub Actions"
+          branch: main
+          token: ${{ secrets.HF_TOKEN }}
+          # The 'models/' directory should already be pushed via the model hub step,
+          # and symlinked in the Space's Dockerfile or loaded from the Model Hub.
+          # For Streamlit, often models are downloaded inside the app_hf_space.py
+          # if not directly part of the Space's repo root.
+          # Here we assume models/ are directly accessible by symlink or a loading strategy
+          # as the app_hf_space.py might need access. For simplicity in demo,
+          # models are assumed to be pushed to the root of the space in the 'models/' folder.
+          lfs: "true" # Use LFS for large files (models)
+
+      - name: Update README with Hugging Face Space URL
+        # This custom script automatically updates the README.md file
+        run: python scripts/update_readme.py "ethical-ai-gateway/prompt-protector-demo"
+      
+      - name: Commit updated README
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "Docs: Update README with Hugging Face Space URL" || echo "No changes to commit"
+          git push
