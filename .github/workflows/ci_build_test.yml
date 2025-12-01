@@ -1,3 +1,4 @@
+# .github/workflows/ci_build_test.yml
 name: CI - Build and Test
 
 on:
@@ -11,22 +12,32 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v3
         with:
-          python-version: '3.9'
+          python-version: '3.9' # Or your project's preferred Python version
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
       - name: Run unit and integration tests
+        # Assuming you have a 'tests' directory with pytest tests
         run: pytest tests/
+
       - name: Run code style checks (flake8)
+        # Install flake8 if not in requirements.txt
         run: |
           pip install flake8
           flake8 src/
+
       - name: Run static code ethical audit (SentiaGuard Pre-Gate)
+        # This custom script checks for hardcoded problematic terms or patterns
+        # in the source code itself, preventing direct ethical flaws in the logic.
         run: python scripts/static_code_audit.py src/
