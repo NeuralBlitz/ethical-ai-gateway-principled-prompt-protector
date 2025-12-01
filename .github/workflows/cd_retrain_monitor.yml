@@ -1,0 +1,93 @@
+# .github/workflows/cd_retrain_monitor.yml
+name: CD - Retrain and Monitor CRC Model
+
+on:
+  schedule:
+    # Runs every Sunday at midnight UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions UI
+
+jobs:
+  retrain-and-audit:
+    runs-on: [self-hosted, large-runner] # Requires a more powerful, potentially secure runner
+    environment: SecureDataProcessing # Link to environment for secrets/secure access
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install huggingface_hub scikit-learn # Ensure all necessary libs for training/eval
+
+      - name: Authenticate to Hugging Face Hub (for downloading/pushing models)
+        uses: huggingface/actions/login@v1
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+      - name: Download existing model from HF Hub (for current model baseline)
+        run: |
+          mkdir -p models_current
+          huggingface-cli download ethical-ai-gateway/principled-prompt-protector-model --local-dir models_current --force
+        
+      - name: Collect and preprocess new data (Conceptual: Securely fetch anonymized user prompts)
+        # This script would interact with a secure data store (e.g., a database with anonymized user interactions
+        # for which explicit consent for model improvement has been granted).
+        run: python scripts/collect_new_prompts.py --output_path data/new_prompts_for_labeling.csv
+        env:
+          SECURE_DATA_API_KEY: ${{ secrets.SECURE_DATA_API_KEY }} # Example secret
+
+      - name: Trigger Human-in-the-Loop Labeling (Conceptual)
+        # This would integrate with a human labeling platform/tool.
+        run: python scripts/trigger_human_labeling.py --input_path data/new_prompts_for_labeling.csv --output_path data/labeled_prompts_incremental.csv
+        
+      - name: Combine old and new labeled data for training
+        run: |
+          python scripts/combine_datasets.py data/labeled_prompts_v1.csv data/labeled_prompts_incremental.csv data/labeled_prompts_combined.csv
+          # Update the version label for the new combined dataset
+          echo "labeled_prompts_combined.csv" > data/current_training_data.txt
+
+
+      - name: Retrain CRC model
+        # This script trains the model on the combined dataset
+        run: python scripts/train_crc.py --data_path data/labeled_prompts_combined.csv --model_output_dir models_new/
+
+      - name: Evaluate new model and perform ethical bias audit
+        # This script performs comprehensive performance and ethical audits.
+        # It's crucial for the Judex-like arbitration.
+        run: python scripts/evaluate_crc.py --model_path models_new/ --eval_results_path evaluation_results_new.json --bias_data_path data/bias_eval_set.csv
+
+      - name: Arbitrate ethical decision for deployment (Judex-like arbitration)
+        # This custom script compares the new model against the current deployed model.
+        # It implements the ethical decision-making logic:
+        # - Checks if new model offers significant performance improvement.
+        # - Ensures no new ethical biases or regressions exceed predefined thresholds (Ethical Drift Thresholds).
+        # If it passes, it moves models_new/ to models/ (as the new official version) and triggers re-deployment.
+        # If it fails, it flags for human review, adhering to Φ11 (Alignment > Performance).
+        run: python scripts/ethical_decision_maker.py \
+             --current_model_path models_current/ \
+             --new_model_path models_new/ \
+             --current_eval_path evaluation_metrics.json \
+             --new_eval_path evaluation_results_new.json \
+             --deploy_target_path models/ \
+             --hf_model_repo ethical-ai-gateway/principled-prompt-protector-model \
+             --github_token ${{ secrets.GITHUB_TOKEN }} # For committing new model versions to GitHub
+        
+      - name: Save new evaluation metrics
+        # Update the main evaluation metrics file
+        run: cp evaluation_results_new.json evaluation_metrics.json
+        
+      - name: Commit updated model and evaluation metrics to GitHub
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add models/ evaluation_metrics.json data/current_training_data.txt
+          git commit -m "CI/CD: Automated model retraining and ethical audit deployment" || echo "No changes to commit"
+          git push
