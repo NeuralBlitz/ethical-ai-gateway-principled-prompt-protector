@@ -6,6 +6,7 @@ This project aims to foster responsible and beneficial interactions with Artific
 
 See `src/`, `models/`, `data/`, and `scripts/` for project structure and logic.
 
+
 ---
 ## Installation
 ```bash
