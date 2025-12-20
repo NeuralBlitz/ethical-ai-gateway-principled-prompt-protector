@@ -1,4 +1,4 @@
-# 🛡️ Principled Prompt Protector 
+# 🛡️ PrincipledPrompt Protector 
 
 A Hugging Face-powered, ethically-aligned intelligent filter for Large Language Model (LLM) prompts.
 
